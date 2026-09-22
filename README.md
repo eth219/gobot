@@ -158,13 +158,23 @@ gobot --time 4 --engine \
 
 On a 9x9 board that is not the net to use. KataGo's main run trains on 19x19,
 and there is a [separately finetuned 9x9
-net](https://katagotraining.org/extra_networks/) trained on nothing else. It is
-the same architecture and size as the general net of its generation, so it
-costs nothing: in 60 games between the two at 400 visits a move, 9x9, it won 30
-of the 36 that were decided — the other 24 were draws, because that match used
-an integer komi and an integer komi on a 9x9 area-scored board lands on jigo
-constantly. It was also the faster of the two, 0.50 against 0.54 seconds a
-move.
+net](https://katagotraining.org/extra_networks/) trained on nothing else. It
+beat the `kata1` net Homebrew ships, and then it beat the strongest net in the
+whole run — 71 games of 120 at 9x9 and komi 6.5, on equal time — although that
+one is two years newer and 900 Elo ahead at 19x19.
+
+It wins on speed. In a five-second budget the 9x9 net gets 9,476 visits where
+the newest gets 1,155, so it reads eight positions for every one, and eight
+times the search buys back a lot of Elo. That ratio belongs to this hardware
+and not to the nets: KataGo's transformer work is written for CUDA and its
+release notes do not mention Metal, so on an NVIDIA machine this may well go
+the other way, and on equal visits rather than equal time the newer net should
+win outright.
+
+Nor is 59% a rout — p is 0.045 over those 120 games, which says the 9x9 net is
+not worse and is probably a little better, not that it is clearly stronger.
+What is not marginal is the rest of it: half the download, eight times the
+search, and trained for the only board size this program is about.
 
 ```sh
 curl -O https://media.katagotraining.org/uploaded/networks/models_extra/kata9x9-b18c384nbt-20231025.bin.gz
