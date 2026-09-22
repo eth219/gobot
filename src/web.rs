@@ -304,26 +304,54 @@ fn refusal(why: Rejected) -> String {
     }
 }
 
+/// What the engine would play, best first. A list rather than one move
+/// because the caller has rules the engine may not have been able to hear:
+/// an engine driven over GTP is told the position stone by stone, and there
+/// is no GTP command that tells it a ko is standing, so its own first choice
+/// can be a retake this board forbids.
 fn best_move(
     board: &Board,
     komi: f32,
     millis: u64,
     opts: &ServeOptions,
     engine: Option<&mut GtpEngine>,
-) -> Result<(Move, String), String> {
+) -> Result<(Vec<Move>, String), String> {
+    /// The ordering, with `best` in front of it in case the engine only
+    /// answered with a move and offered no candidates at all.
+    fn ranked(best: Move, rest: impl Iterator<Item = Move>) -> Vec<Move> {
+        let mut moves = vec![best];
+        moves.extend(rest.filter(|mv| *mv != best));
+        moves
+    }
     match engine {
         Some(engine) => engine
             .advise(board, komi, millis)
-            .map(|a| (a.best, a.source)),
+            .map(|a| (ranked(a.best, a.candidates.iter().map(|c| c.mv)), a.source)),
         None => {
             let mut params = opts.params;
             params.komi = komi;
             params.time_limit = Some(std::time::Duration::from_millis(millis));
             params.playouts = None;
             let result = mcts::search(board, &params);
-            Ok((result.best, format!("gobot, {} playouts", result.playouts)))
+            Ok((
+                ranked(result.best, result.candidates.iter().map(|c| c.mv)),
+                format!("gobot, {} playouts", result.playouts),
+            ))
         }
     }
+}
+
+/// Plays the first of `moves` the rules allow and returns it. Passing is the
+/// last resort: it can never repeat a position and never breaks a ko, so it
+/// always leaves the turn somewhere rather than stuck with the engine.
+fn play_first_legal(game: &mut Game, moves: &[Move]) -> Move {
+    for &mv in moves {
+        if game.play(mv).is_ok() {
+            return mv;
+        }
+    }
+    let _ = game.play(Move::Pass);
+    Move::Pass
 }
 
 /// Plays the person's move and nothing else.
@@ -385,32 +413,13 @@ fn play(body: &str, opts: &ServeOptions, engine: Option<&mut GtpEngine>) -> Stri
     }
     let komi = request.game.komi;
     match best_move(request.board(), komi, request.millis, opts, engine) {
-        Ok((mv, source)) => {
-            // The search works a bare board and knows nothing of the history,
-            // so its move can still repeat a position. Passing is the honest
-            // answer there — a pass can never repeat one — where calling it
-            // illegal would leave the turn with the engine and the game stuck.
-            let played = match request.game.play(mv) {
-                Ok(()) => Some(mv),
-                Err(Rejected::Superko) => {
-                    let _ = request.game.play(Move::Pass);
-                    Some(Move::Pass)
-                }
-                Err(Rejected::Rules(_)) => None,
-            };
+        Ok((moves, source)) => {
+            let mv = play_first_legal(&mut request.game, &moves);
+            let name = format_move(request.board(), mv);
             out.push_str(&board_line(request.board()));
-            match played {
-                Some(mv) => {
-                    let name = format_move(request.board(), mv);
-                    out.push_str(&format!("played {name}\n"));
-                    out.push_str(&format!("last {name}\n"));
-                    out.push_str(&format!("source {source}\n"));
-                }
-                None => out.push_str(&format!(
-                    "error the engine offered {}, which is illegal\n",
-                    format_move(request.board(), mv)
-                )),
-            }
+            out.push_str(&format!("played {name}\n"));
+            out.push_str(&format!("last {name}\n"));
+            out.push_str(&format!("source {source}\n"));
         }
         Err(why) => {
             out.push_str(&board_line(request.board()));
@@ -774,6 +783,39 @@ mod tests {
             "seen bbbbbbbbb/........./........./........./........./........./........./........./.........\n",
         );
         assert_eq!(line(&elsewhere, "last "), Some("last E5"), "{elsewhere}");
+    }
+
+    #[test]
+    fn a_move_the_rules_refuse_falls_through_to_the_engines_next_choice() {
+        // An engine driven over GTP is told the position stone by stone, and
+        // no GTP command tells it that a ko is standing, so its first choice
+        // can be a retake this board forbids. The rest of its ordering is
+        // still good advice, and taking it beats giving up on the turn.
+        let mut request = parse_request(
+            &format!("size 9\ntomove w\nko E5\n{KO_AFTER_TAKE}"),
+            &options(),
+        )
+        .expect("a position");
+        let retake = crate::coords::parse_move(request.board(), "E5").expect("E5");
+        let legal = crate::coords::parse_move(request.board(), "E3").expect("E3");
+
+        let played = play_first_legal(&mut request.game, &[retake, legal]);
+        assert_eq!(format_move(request.board(), played), "E3");
+        assert!(
+            line(&board_line(request.board()), "ko ").is_none(),
+            "playing elsewhere clears the ko"
+        );
+    }
+
+    #[test]
+    fn it_passes_only_when_nothing_the_engine_offered_is_legal() {
+        let mut request = parse_request(
+            &format!("size 9\ntomove w\nko E5\n{KO_AFTER_TAKE}"),
+            &options(),
+        )
+        .expect("a position");
+        let retake = crate::coords::parse_move(request.board(), "E5").expect("E5");
+        assert_eq!(play_first_legal(&mut request.game, &[retake]), Move::Pass);
     }
 
     #[test]
