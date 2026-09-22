@@ -154,6 +154,29 @@ gobot --time 4 --engine \
   "katago gtp -model $NET -override-config maxVisits=2000,numSearchThreads=4,rules=tromp-taylor"
 ```
 
+On a 9x9 board that is not the net to use. KataGo's main run trains on 19x19,
+and there is a [separately finetuned 9x9
+net](https://katagotraining.org/extra_networks/) trained on nothing else. It is
+the same architecture and size as the general net of its generation, so it
+costs nothing: in 60 games between the two at 400 visits a move, 9x9, it won 30
+of the 36 that were decided — the other 24 were draws, because that match used
+an integer komi and an integer komi on a 9x9 area-scored board lands on jigo
+constantly. It was also the faster of the two, 0.50 against 0.54 seconds a
+move.
+
+```sh
+curl -O https://media.katagotraining.org/uploaded/networks/models_extra/kata9x9-b18c384nbt-20231025.bin.gz
+gobot serve --engine \
+  "katago gtp -model kata9x9-b18c384nbt-20231025.bin.gz -override-config numSearchThreads=20,maxVisits=20000,rules=tromp-taylor"
+```
+
+`numSearchThreads` is worth measuring rather than guessing: the config KataGo
+ships sets 6, and on the machine above 20 was the peak at 4,628 visits in a
+five-second budget against 3,037 for 6 — with 32 and beyond falling off a
+cliff. `maxVisits` wants to be high enough never to bind, because the server
+waits out its whole time budget either way; the shipped config sets 500, which
+a five-second budget passes in under two.
+
 The position is rebuilt on the other engine stone by stone rather than replayed
 as a game, because a position typed in by hand has stones but no history.
 
@@ -275,10 +298,18 @@ less than eight times the thinking time.
 
 ## What this does not tell you
 
-- **No rank.** `gobot match` measures it against whatever opponent is to hand,
-  and a handicap makes that a number. Turning that number into a kyu rank needs
-  an opponent whose own rank is known, which KataGo's human-imitation networks
-  would give — they are a separate download and nothing here has used one.
+- **Still no rank, but now for a better reason.** Turning a win rate into a kyu
+  rank needs an opponent whose own rank is known, and KataGo's human-imitation
+  network is one — set `humanSLProfile` and it plays like a human of that rank.
+  Against it on 9x9, at a second a move, gobot is exactly even with `rank_15k`
+  (18 of 36) and clearly below `rank_10k` (2 of 12). That still does not make
+  gobot 15 kyu. The scale does not separate its weak end on this board size —
+  `rank_20k`, five ranks weaker, only loses 7 of 12 — so the measurement is
+  bracketed from above and not from below. And the model learned rank from
+  human games, which are overwhelmingly 19x19: what separates 20k from 15k
+  there is opening shape that a 9x9 board barely has room for. The honest
+  reading is that gobot is somewhere below 10 kyu, and that this ladder cannot
+  say where.
 - **No neural network.** Playouts are random with two filters (no filling your
   own eyes, no walking into atari) plus an atari reply. This is the pre-AlphaGo
   design, and its ceiling is well below any engine with a policy net.
