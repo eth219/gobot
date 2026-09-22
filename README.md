@@ -135,7 +135,9 @@ random boards, which is the assumption the whole `--engine` path rests on.
 
 `--engine` keeps this board and this way of entering a position, but asks
 something else what to play. KataGo is the obvious thing to point it at — its
-code is MIT, the networks it ships are CC0, and it needs setting up once:
+code is MIT and its networks carry the MIT terms too, free to use and pass on
+so long as the copyright notice goes with them, with the oldest `g170` ones
+CC0 outright. It needs setting up once:
 
 ```sh
 brew install katago
