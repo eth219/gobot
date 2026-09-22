@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>gobot</title>
+<style>
+  :root {
+    --bg: #f3f0ea; --panel: #fffefb; --line: #e3dbd0; --line-firm: #cdc2b3;
+    --ink: #24211e; --muted: #776e63;
+    --accent: #1c6c49; --accent-soft: rgba(28,108,73,.12); --warn: #96461f;
+    --wood-top: #eed6a6; --wood-bottom: #ddbd80; --grid: #5e431d; --coord: #6d5127;
+    --black-top: #56524c; --black-bottom: #14120f;
+    --white-top: #ffffff; --white-bottom: #ddd5c6;
+    --marker-bg: rgba(255,255,255,.86); --shadow: rgba(60,40,10,.38);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131215; --panel: #1b1a1f; --line: #2e2c34; --line-firm: #45424d;
+      --ink: #eceae5; --muted: #a29b91;
+      --accent: #5cc99b; --accent-soft: rgba(92,201,155,.16); --warn: #dd8d63;
+      --wood-top: #b39159; --wood-bottom: #97784a; --grid: #33240c; --coord: #40300f;
+      --black-top: #5c5850; --black-bottom: #0d0c0a;
+      --white-top: #fbf8f2; --white-bottom: #cbc3b3;
+      --marker-bg: rgba(18,17,20,.78); --shadow: rgba(0,0,0,.5);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; align-items: center;
+  }
+  header { width: 100%; max-width: 920px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  #source { color: var(--muted); font-size: 13px; }
+  .wrap { width: 100%; max-width: 920px; display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  #boardwrap { flex: 1 1 360px; min-width: 300px; padding: 8px; position: relative; overflow: hidden; }
+  #side { flex: 1 1 290px; min-width: 268px; display: flex; flex-direction: column; gap: 12px; }
+  svg { width: 100%; height: auto; display: block; touch-action: manipulation; }
+
+  /* A thin bar crossing the top of the board while the engine is away. */
+  #boardwrap::after {
+    content: ""; position: absolute; inset: 0 auto auto 0; height: 3px; width: 40%;
+    background: var(--accent); border-radius: 3px; opacity: 0; transform: translateX(-50%);
+  }
+  #boardwrap.thinking::after { opacity: 1; animation: sweep 1.1s ease-in-out infinite; }
+  @keyframes sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
+  .field { display: grid; grid-template-columns: 66px 1fr; gap: 10px; align-items: center; }
+  #gofield { grid-template-columns: 1fr; margin-bottom: 14px; }
+  .field + .field { margin-top: 8px; }
+  .field > span { color: var(--muted); font-size: 12.5px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* Three numbers side by side stay side by side: on a phone the old inline
+     row broke, and half a field on its own line reads as a bug. */
+  /* Bounded, or a wide panel stretches three small numbers across all of it. */
+  .controls.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; max-width: 330px; }
+  .mini {
+    display: grid; gap: 3px; font-size: 11px; color: var(--muted);
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  .mini select, .mini input { width: 100%; font-size: 14px; text-transform: none; letter-spacing: 0; }
+
+  /* Joined buttons read as one choice; separate pills read as four actions. */
+  .seg { display: inline-flex; border: 1px solid var(--line-firm); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 7px 12px; }
+  .seg button + button { border-left: 1px solid var(--line-firm); }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 620; }
+
+  select, input {
+    font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line-firm); border-radius: 10px; padding: 7px 9px;
+  }
+  input[type=number] { width: 70px; }
+  button {
+    font: inherit; font-size: 14px; border: 1px solid var(--line-firm); background: transparent;
+    color: var(--ink); border-radius: 10px; padding: 8px 13px; cursor: pointer;
+  }
+  button:hover:not(.on):not(.go):not(:disabled) { background: var(--bg); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.go:hover:not(:disabled) { filter: brightness(1.07); }
+  button.go:disabled { opacity: 1; background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+  button.go {
+    background: var(--accent); border-color: var(--accent); color: var(--panel);
+    font-weight: 650; flex: 1; padding: 11px; font-size: 15px;
+  }
+  .quiet { color: var(--muted); }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+  .actions button, .actions select { font-size: 13.5px; padding: 7px 11px; }
+
+  /* Board size, komi and thinking time get set once and then sit there taking
+     up the panel, so they fold away behind what they currently are. */
+  .settings { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  summary {
+    cursor: pointer; list-style: none; font-size: 13px; color: var(--muted);
+    padding: 4px 2px; display: flex; justify-content: space-between; align-items: center;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "Edit"; font-size: 12px; color: var(--accent); }
+  .settings[open] summary::after { content: "Done"; }
+  .settings[open] .trio { margin: 10px 0 0; }
+  .hint { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin: 10px 2px 2px; }
+
+  ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  li {
+    display: grid; grid-template-columns: 48px 52px 1fr 60px; gap: 10px; align-items: center;
+    padding: 8px 10px; border-radius: 10px; cursor: pointer;
+    border: 1px solid transparent; border-left: 3px solid transparent;
+  }
+  li:hover { background: var(--bg); }
+  li.sel { background: var(--bg); border-color: var(--line-firm); }
+  li.best { border-left-color: var(--accent); }
+  li.best .v { color: var(--accent); font-weight: 700; }
+  .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .pct { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+  .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .visits { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; text-align: right; }
+  .head {
+    display: grid; grid-template-columns: 48px 52px 1fr 60px; gap: 10px;
+    font-size: 11px; color: var(--muted); letter-spacing: .07em; text-transform: uppercase;
+    padding: 0 10px 8px 13px;
+  }
+  .head span:last-child { text-align: right; }
+  .note { font-size: 13px; color: var(--muted); margin: 10px 2px 0; }
+  .warn { font-size: 13px; color: var(--warn); margin: 8px 2px 0; }
+  [hidden] { display: none !important; }
+
+  @media (pointer: coarse) {
+    button, select, input { min-height: 44px; }
+    .seg button { min-height: 44px; padding: 10px 14px; }
+    li { min-height: 46px; }
+  }
+  @media (max-width: 780px) {
+    body { padding: 12px 12px 92px; gap: 10px; }
+    h1 { font-size: 16px; }
+    #source { font-size: 12px; width: 100%; }
+    .wrap { flex-direction: column; gap: 10px; }
+    #boardwrap, #side { flex: none; width: 100%; min-width: 0; }
+    #boardwrap { padding: 5px; }
+    .panel { padding: 11px; }
+    .field { grid-template-columns: 62px 1fr; gap: 8px; }
+    input[type=number] { width: 64px; }
+    /* Keep the board from eating the screen, so the controls under it are
+       reachable without a scroll on every turn. */
+    #boardwrap { max-width: min(100%, 56vh); margin: 0 auto; }
+    /* The one button pressed every turn stays under a thumb. */
+    #gofield {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; margin: 0; display: block;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: color-mix(in srgb, var(--bg) 90%, transparent);
+      backdrop-filter: blur(10px); border-top: 1px solid var(--line);
+    }
+    button.go { width: 100%; padding: 13px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>gobot</h1>
+  <span id="source">—</span>
+</header>
+
+<div class="wrap">
+  <div class="panel" id="boardwrap"><svg id="board" viewBox="0 0 100 100"></svg></div>
+
+  <div id="side">
+    <div class="panel">
+      <div class="field" id="gofield"><button class="go" id="go">Analyse</button></div>
+      <div class="field">
+        <span>mode</span>
+        <div class="controls">
+          <div class="seg">
+            <button data-mode="setup" class="on">Set up</button>
+            <button data-mode="play">Play</button>
+          </div>
+        </div>
+      </div>
+      <div class="field" id="toolrow">
+        <span>place</span>
+        <div class="controls">
+          <div class="seg">
+            <button data-tool="b" class="on">Black</button>
+            <button data-tool="w">White</button>
+            <button data-tool="x">Erase</button>
+          </div>
+        </div>
+      </div>
+      <div class="field" id="siderow" hidden>
+        <span>you are</span>
+        <div class="controls">
+          <div class="seg">
+            <button data-side="b" class="on">Black</button>
+            <button data-side="w">White</button>
+          </div>
+          <button id="enginemove" class="quiet">Engine moves</button>
+        </div>
+      </div>
+      <div class="field" id="turnrow">
+        <span>to play</span>
+        <div class="controls">
+          <div class="seg">
+            <button data-turn="b" class="on">Black</button>
+            <button data-turn="w">White</button>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="hcap">Handicap</button>
+        <select id="hn"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option></select>
+        <button id="undo">Undo</button>
+        <button id="pass">Pass</button>
+        <button id="clear">Clear</button>
+      </div>
+      <details class="settings">
+        <summary id="summary">9x9 · komi 6.5 · 3s</summary>
+        <div class="controls trio">
+          <label class="mini">board<select id="size"><option>9</option><option>13</option><option>19</option></select></label>
+          <label class="mini">komi<input id="komi" type="number" step="0.5" value="6.5"></label>
+          <label class="mini">seconds<input id="time" type="number" step="0.5" min="0.2" value="3"></label>
+        </div>
+        <p class="hint">Komi is the points White is given for moving second. Set it to
+        whatever the game you are following uses, or the win rates describe a
+        different game. Seconds is how long the engine thinks each time it is asked.</p>
+      </details>
+    </div>
+
+    <div class="panel">
+      <div class="head" id="head" hidden><span>move</span><span>win</span><span></span><span>looked at</span></div>
+      <ol id="moves"></ol>
+      <p class="note" id="status">Click stones onto the board, then Analyse.</p>
+      <p class="warn" id="warn" hidden></p>
+    </div>
+  </div>
+</div>
+
+<script>
+const LETTERS = "ABCDEFGHJKLMNOPQRST";
+const PAD = 36, CELL = 60;
+
+let size = 9, stones = [], tool = "b", turn = "b", cands = [], sel = -1, busy = false;
+let mode = "setup", side = "b", history = [], pending = null, lastMove = null, thinking = false;
+// A rebuilt board knows neither the ko nor what has already been played, so
+// both travel with every request.
+let koPoint = null, seen = [];
+
+const $ = id => document.getElementById(id);
+const key = (x, y) => y * size + x;
+const vertex = (x, y) => LETTERS[x] + (y + 1);
+function fromVertex(v) {
+  if (!v) return null;
+  const x = LETTERS.indexOf(v[0].toUpperCase());
+  const y = parseInt(v.slice(1), 10) - 1;
+  return (x < 0 || isNaN(y) || y < 0) ? null : { x, y };
+}
+
+// On a small board on a phone an intersection can be under twenty pixels
+// across, which is narrower than a fingertip. There the first tap aims and the
+// second one commits, which is how every Go app on a phone does it.
+function cellPixels() {
+  const r = $("board").getBoundingClientRect();
+  const box = (size - 1) * CELL + PAD * 2;
+  return r.width ? r.width * CELL / box : 99;
+}
+function confirmTaps() {
+  return window.matchMedia("(pointer: coarse)").matches && cellPixels() < 34;
+}
+
+function reset(n) {
+  size = n;
+  stones = new Array(n * n).fill(".");
+  cands = []; sel = -1; history = []; pending = null; lastMove = null;
+  newRoot();
+  draw(); list();
+}
+function remember() {
+  history.push({ stones: stones.slice(), turn, lastMove, koPoint, seen: seen.slice() });
+  if (history.length > 200) history.shift();
+}
+// A ko binds only the player to move, so wherever the page changes the turn
+// itself it lets the ko go. Not here: this is also how an answer from the
+// server lands, and that answer carries the ko that goes with the new turn.
+function setTurn(t) {
+  turn = t;
+  document.querySelectorAll("[data-turn]").forEach(o => o.classList.toggle("on", o.getAttribute("data-turn") === t));
+}
+// This position is the root of the game as far as the rules care: no capture
+// led to it, and nothing before it counts as played.
+function newRoot() {
+  koPoint = null; seen = [rowsString()];
+}
+function rowsString() {
+  const out = [];
+  for (let y = size - 1; y >= 0; y--) {
+    let row = "";
+    for (let x = 0; x < size; x++) row += stones[key(x, y)];
+    out.push(row);
+  }
+  return out.join("/");
+}
+function position(withHistory = true) {
+  let body = `size ${size}\nkomi ${$("komi").value}\ntime ${$("time").value}\n`;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const c = stones[key(x, y)];
+    if (c !== ".") body += `${c} ${x} ${y}\n`;
+  }
+  if (koPoint) body += `ko ${koPoint}\n`;
+  // Only a move can break superko, so only those requests carry the history.
+  if (withHistory) for (const p of seen) body += `seen ${p}\n`;
+  return body;
+}
+function applyBoard(rows) {
+  stones = new Array(size * size).fill(".");
+  rows.forEach((row, i) => {
+    const y = size - 1 - i;
+    [...row].forEach((ch, x) => { if (ch !== ".") stones[key(x, y)] = ch; });
+  });
+}
+function setThinking(on) {
+  thinking = on;
+  $("boardwrap").classList.toggle("thinking", on);
+  $("go").disabled = on;
+  $("go").textContent = on ? "Thinking…" : "Analyse";
+}
+
+// --- the board ------------------------------------------------------------
+function draw() {
+  const box = (size - 1) * CELL + PAD * 2;
+  const svg = $("board");
+  svg.setAttribute("viewBox", `0 0 ${box} ${box}`);
+  const px = x => PAD + x * CELL, py = y => PAD + (size - 1 - y) * CELL;
+  const G = [];
+
+  G.push(`<defs>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--wood-top)"/>
+      <stop offset="1" style="stop-color:var(--wood-bottom)"/>
+    </linearGradient>
+    <radialGradient id="bstone" cx="34%" cy="30%" r="72%">
+      <stop offset="0" style="stop-color:var(--black-top)"/>
+      <stop offset="1" style="stop-color:var(--black-bottom)"/>
+    </radialGradient>
+    <radialGradient id="wstone" cx="34%" cy="30%" r="72%">
+      <stop offset="0" style="stop-color:var(--white-top)"/>
+      <stop offset="1" style="stop-color:var(--white-bottom)"/>
+    </radialGradient>
+    <filter id="drop" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="var(--shadow)"/>
+    </filter>
+  </defs>`);
+
+  G.push(`<rect x="0" y="0" width="${box}" height="${box}" rx="12" fill="url(#wood)"/>`);
+
+  // The outer lines of a board are heavier than the inner ones.
+  for (let i = 0; i < size; i++) {
+    const edge = (i === 0 || i === size - 1) ? 2.6 : 1.5;
+    G.push(`<line x1="${px(0)}" y1="${py(i)}" x2="${px(size-1)}" y2="${py(i)}" stroke="var(--grid)" stroke-width="${edge}" stroke-linecap="square"/>`);
+    G.push(`<line x1="${px(i)}" y1="${py(0)}" x2="${px(i)}" y2="${py(size-1)}" stroke="var(--grid)" stroke-width="${edge}" stroke-linecap="square"/>`);
+  }
+  const e = size >= 13 ? 3 : 2, mid = (size - 1) / 2;
+  const marks = size >= 7 ? [e, size - 1 - e].concat(size % 2 ? [mid] : []) : [];
+  for (const mx of marks) for (const my of marks)
+    G.push(`<circle cx="${px(mx)}" cy="${py(my)}" r="4.6" fill="var(--grid)"/>`);
+  for (let i = 0; i < size; i++) {
+    G.push(`<text x="${px(i)}" y="${PAD - 14}" font-size="18" font-weight="500" text-anchor="middle" fill="var(--coord)">${LETTERS[i]}</text>`);
+    G.push(`<text x="${PAD - 16}" y="${py(i) + 6}" font-size="18" font-weight="500" text-anchor="middle" fill="var(--coord)">${i + 1}</text>`);
+  }
+
+  const R = CELL * 0.465;
+  const stone = (x, y, c, opacity) => `<circle cx="${px(x)}" cy="${py(y)}" r="${R}" fill="url(#${c === "b" ? "bstone" : "wstone"})"`
+    + (c === "w" ? ` stroke="rgba(0,0,0,.18)" stroke-width="1"` : ``)
+    + (opacity !== undefined ? ` opacity="${opacity}"` : ` filter="url(#drop)"`) + `/>`;
+
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const c = stones[key(x, y)];
+    if (c !== ".") G.push(stone(x, y, c));
+  }
+
+  // The stone that went down last, so the board can be read without being
+  // watched. A ring rather than a dot: a dot on a black stone disappears.
+  const lm = fromVertex(lastMove);
+  if (lm && stones[key(lm.x, lm.y)] !== ".") {
+    const ink = stones[key(lm.x, lm.y)] === "b" ? "rgba(255,252,245,.92)" : "rgba(25,22,18,.72)";
+    G.push(`<circle cx="${px(lm.x)}" cy="${py(lm.y)}" r="${R * 0.42}" fill="none" stroke="${ink}" stroke-width="2.4"/>`);
+  }
+
+  if (pending) {
+    const c = (mode === "play" ? side : tool);
+    if (c !== "x") G.push(stone(pending.x, pending.y, c, 0.5));
+    G.push(`<circle cx="${px(pending.x)}" cy="${py(pending.y)}" r="${R + 3}" fill="none" stroke="var(--accent)" stroke-width="3"/>`);
+  }
+
+  if (cands.length) {
+    const chosen = sel >= 0 ? sel : -1;
+    const pv = chosen >= 0 ? cands[chosen].pv : null;
+    if (pv && pv.length > 1) {
+      // The line played out, numbered, alternating from whoever is to move.
+      let who = turn;
+      pv.forEach((v, i) => {
+        const p = fromVertex(v); if (!p) return;
+        G.push(stone(p.x, p.y, who, 0.94));
+        G.push(`<circle cx="${px(p.x)}" cy="${py(p.y)}" r="${R}" fill="none" stroke="var(--accent)" stroke-width="2"/>`);
+        const ink = who === "b" ? "var(--white-top)" : "var(--black-bottom)";
+        G.push(`<text x="${px(p.x)}" y="${py(p.y) + 7}" font-size="21" font-weight="600" text-anchor="middle" fill="${ink}">${i + 1}</text>`);
+        who = who === "b" ? "w" : "b";
+      });
+    } else {
+      // Size carries how hard each move was looked at, which is the thing that
+      // ranks them; the number is the win rate. Encoding both in colour would
+      // say neither.
+      const top = Math.max(1, cands[0].visits || 1);
+      cands.forEach((c, i) => {
+        const p = fromVertex(c.move); if (!p) return;
+        const share = Math.sqrt(Math.min(1, (c.visits || top) / top));
+        const r = CELL * (0.26 + 0.205 * share);
+        const rated = c.winrate !== null && !isNaN(c.winrate);
+        if (i === 0) {
+          G.push(`<circle cx="${px(p.x)}" cy="${py(p.y)}" r="${r}" fill="var(--accent)" opacity=".95"/>`);
+        } else {
+          G.push(`<circle cx="${px(p.x)}" cy="${py(p.y)}" r="${r}" fill="var(--marker-bg)" stroke="var(--accent)" stroke-width="2" opacity=".9"/>`);
+        }
+        if (rated && r > CELL * 0.3) {
+          const ink = i === 0 ? "var(--panel)" : "var(--accent)";
+          G.push(`<text x="${px(p.x)}" y="${py(p.y) + 6}" font-size="19" font-weight="600" text-anchor="middle" fill="${ink}">${Math.round(c.winrate * 100)}</text>`);
+        }
+      });
+    }
+  }
+  svg.innerHTML = G.join("");
+}
+
+$("board").addEventListener("click", e => {
+  if (busy) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const box = (size - 1) * CELL + PAD * 2;
+  const sx = (e.clientX - r.left) / r.width * box, sy = (e.clientY - r.top) / r.height * box;
+  const x = Math.round((sx - PAD) / CELL), y = size - 1 - Math.round((sy - PAD) / CELL);
+  if (x < 0 || y < 0 || x >= size || y >= size) return;
+  if (confirmTaps() && (!pending || pending.x !== x || pending.y !== y)) {
+    pending = { x, y };
+    $("status").textContent = `${vertex(x, y)} — tap it again to place it`;
+    draw();
+    return;
+  }
+  pending = null;
+  if (mode === "play") {
+    if (turn !== side) { $("status").textContent = "it is the engine's turn — press “Engine moves”."; draw(); return; }
+    if (stones[key(x, y)] !== ".") { draw(); return; }
+    takeTurn(vertex(x, y));
+    return;
+  }
+  const at = key(x, y);
+  remember();
+  const was = stones[at];
+  stones[at] = tool === "x" ? "." : (was === tool ? "." : tool);
+  lastMove = stones[at] === "." ? null : vertex(x, y);
+  newRoot();
+  cands = []; sel = -1;
+  draw(); list();
+});
+
+// --- controls -------------------------------------------------------------
+function group(attr, set) {
+  document.querySelectorAll(`[${attr}]`).forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(`[${attr}]`).forEach(o => o.classList.remove("on"));
+    b.classList.add("on");
+    set(b.getAttribute(attr));
+  }));
+}
+group("data-tool", v => tool = v);
+group("data-side", v => { side = v; });
+group("data-turn", v => { turn = v; koPoint = null; draw(); });
+group("data-mode", v => {
+  mode = v; pending = null; draw();
+  $("toolrow").hidden = mode === "play";
+  $("siderow").hidden = mode !== "play";
+  $("status").textContent = mode === "play"
+    ? "Click where you want to play. The engine answers as the other colour."
+    : "Click stones onto the board, then Analyse.";
+});
+$("size").addEventListener("change", e => { reset(parseInt(e.target.value, 10)); refreshSummary(); });
+$("clear").addEventListener("click", () => { reset(size); warn(""); });
+$("undo").addEventListener("click", () => {
+  const prev = history.pop();
+  if (!prev) { $("status").textContent = "nothing to undo"; return; }
+  stones = prev.stones; setTurn(prev.turn); lastMove = prev.lastMove;
+  koPoint = prev.koPoint; seen = prev.seen;
+  cands = []; sel = -1; pending = null; draw(); list();
+});
+$("pass").addEventListener("click", () => {
+  if (mode === "play") { engineTurn(); return; }
+  remember(); setTurn(turn === "b" ? "w" : "b"); koPoint = null; cands = []; sel = -1; draw(); list();
+});
+$("enginemove").addEventListener("click", () => engineTurn());
+$("hcap").addEventListener("click", () => {
+  const n = parseInt($("hn").value, 10);
+  const edge = size >= 13 ? 3 : 2, far = size - 1 - edge, mid = (size - 1) / 2;
+  if (size < 7 || (n > 4 && size % 2 === 0)) { warn(`that board has no handicap points for ${n} stones`); return; }
+  const corners = [[edge,edge],[far,far],[edge,far],[far,edge]];
+  const sides = [[edge,mid],[far,mid],[mid,edge],[mid,far]];
+  let pts = corners.slice(0, Math.min(n, 4));
+  if (n === 5 || n === 7 || n === 9) pts = pts.concat(sides.slice(0, n - 5)).concat([[mid,mid]]);
+  else if (n > 4) pts = pts.concat(sides.slice(0, n - 4));
+  stones = new Array(size * size).fill(".");
+  pts.forEach(([x, y]) => stones[key(x, y)] = "b");
+  setTurn("w");
+  cands = []; sel = -1; history = []; pending = null; lastMove = null; warn("");
+  newRoot();
+  draw(); list();
+});
+
+function refreshSummary() {
+  $("summary").firstChild.nodeValue =
+    `${size}x${size} · komi ${$("komi").value} · ${$("time").value}s`;
+}
+["komi", "time"].forEach(id => $(id).addEventListener("input", refreshSummary));
+
+function warn(text) { const w = $("warn"); w.textContent = text; w.hidden = !text; }
+
+function list() {
+  const ol = $("moves");
+  ol.innerHTML = "";
+  cands.forEach((c, i) => {
+    const li = document.createElement("li");
+    li.className = (i === 0 ? "best " : "") + (i === sel ? "sel" : "");
+    const rated = c.winrate !== null && !isNaN(c.winrate);
+    li.innerHTML = `<span class="v">${c.move}</span>
+      <span class="pct">${rated ? (c.winrate * 100).toFixed(1) + "%" : "—"}</span>
+      <span class="bar">${rated ? `<i style="width:${Math.max(2, c.winrate * 100)}%"></i>` : ""}</span>
+      <span class="visits">${c.visits ? c.visits.toLocaleString() : "—"}</span>`;
+    li.title = c.pv.join(" ");
+    li.addEventListener("click", () => { sel = (sel === i ? -1 : i); draw(); list(); });
+    ol.appendChild(li);
+  });
+  $("head").hidden = !cands.length;
+  if (!cands.length) ol.innerHTML = `<li class="note" style="grid-template-columns:1fr;margin:0;padding:4px 10px">nothing yet</li>`;
+}
+
+// --- a turn, in two halves ------------------------------------------------
+// The stone goes down first and on its own, so it is on the board the instant
+// it is tapped. Only then does the engine get asked, which is the part that
+// takes seconds. Doing both in one request left the board unchanged while the
+// engine thought, and a tap that shows nothing reads as a tap that missed.
+function readLines(text) {
+  const out = { board: null, played: null, last: null, tomove: null, source: null, ko: null, error: "" };
+  for (const line of text.split("\n")) {
+    const w = line.split(/\s+/);
+    if (w[0] === "board") out.board = w[2].split("/");
+    else if (w[0] === "played") out.played = w[1];
+    else if (w[0] === "last") out.last = w[1];
+    else if (w[0] === "ko") out.ko = w[1];
+    else if (w[0] === "tomove") out.tomove = w[1];
+    else if (w[0] === "source") out.source = line.slice(7);
+    else if (w[0] === "error") out.error = line.slice(6);
+  }
+  return out;
+}
+
+async function takeTurn(myMove) {
+  if (busy) return;
+  busy = true; warn(""); remember();
+  try {
+    const r = readLines(await fetch("/move", { method: "POST", body: position() + `tomove ${side}\nmove ${myMove}\n` }).then(x => x.text()));
+    if (r.board) applyBoard(r.board);
+    if (r.error) {
+      $("status").textContent = r.error;
+      history.pop(); busy = false; draw(); return;
+    }
+    lastMove = r.last; koPoint = r.ko; if (r.tomove) setTurn(r.tomove);
+    seen.push(rowsString());
+    cands = []; sel = -1;
+    $("status").textContent = `${myMove} — the engine is thinking…`;
+    draw(); list();
+  } catch (err) {
+    $("status").textContent = "could not reach gobot: " + err;
+    history.pop(); busy = false; draw(); return;
+  }
+  busy = false;
+  await engineTurn(true);
+}
+
+async function engineTurn(continuing) {
+  if (busy) return;
+  busy = true; setThinking(true);
+  if (!continuing) { warn(""); remember(); $("status").textContent = "the engine is thinking…"; }
+  const want = continuing ? turn : (side === "b" ? "w" : "b");
+  try {
+    const r = readLines(await fetch("/play", { method: "POST", body: position() + `tomove ${want}\n` }).then(x => x.text()));
+    if (r.board) applyBoard(r.board);
+    if (r.source) $("source").textContent = r.source;
+    if (r.last) { lastMove = r.last; seen.push(rowsString()); }
+    // An answer that refused the whole request says nothing about the ko, and
+    // forgetting a live one there would let the next request retake it.
+    if (r.board) koPoint = r.ko;
+    if (r.tomove) setTurn(r.tomove);
+    cands = []; sel = -1;
+    $("status").textContent = r.error || (r.played ? `engine played ${r.played}` : "the engine had nothing to play");
+  } catch (err) {
+    $("status").textContent = "could not reach gobot: " + err;
+  }
+  busy = false; setThinking(false);
+  draw(); list();
+}
+
+// --- asking for advice ----------------------------------------------------
+async function analyse() {
+  if (busy) return;
+  busy = true; setThinking(true); warn("");
+  $("status").textContent = "thinking…";
+  try {
+    const text = await fetch("/analyse", { method: "POST", body: position(false) + `tomove ${turn}\n` }).then(r => r.text());
+    cands = []; sel = -1;
+    let problem = "";
+    for (const line of text.split("\n")) {
+      const w = line.split(/\s+/);
+      if (w[0] === "board") applyBoard(w[2].split("/"));
+      else if (w[0] === "ko") koPoint = w[1];
+      else if (w[0] === "move") cands.push({ move: w[1], winrate: parseFloat(w[2]), visits: parseInt(w[3], 10) || 0, pv: w.slice(4).filter(Boolean) });
+      // An engine that only answers `genmove` has a move and no opinion.
+      else if (w[0] === "best") cands.push({ move: w[1], winrate: null, visits: 0, pv: [w[1]] });
+      else if (w[0] === "source") $("source").textContent = line.slice(7);
+      else if (w[0] === "dropped") warn(`Stones at ${w.slice(1).join(", ")} cannot be on a board — they would have no liberties, so they were left off. Check those points.`);
+      else if (w[0] === "error") problem = line.slice(6);
+    }
+    $("status").textContent = problem || (cands.length
+      ? `best: ${cands[0].move} — ordered by how hard each was looked at, not by win rate. Tap one to play it out.`
+      : "no suggestion");
+  } catch (err) {
+    $("status").textContent = "could not reach gobot: " + err;
+  }
+  busy = false; setThinking(false);
+  draw(); list();
+}
+$("go").addEventListener("click", analyse);
+document.addEventListener("keydown", e => { if (e.key === "Enter") analyse(); });
+
+fetch("/defaults").then(r => r.text()).then(t => {
+  for (const line of t.split("\n")) {
+    const [k, v] = line.split(/\s+/);
+    if (k === "size") { $("size").value = v; reset(parseInt(v, 10)); }
+    else if (k === "komi") $("komi").value = v;
+    else if (k === "time") $("time").value = v;
+  }
+  refreshSummary();
+}).catch(() => reset(9));
+reset(9);
+refreshSummary();
+</script>
+</body>
+</html>

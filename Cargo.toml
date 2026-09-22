@@ -1,0 +1,19 @@
+[package]
+name = "gobot"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A 9x9-first Go engine, a board you can play it on, and the tooling to measure how strong it is not."
+license = "Apache-2.0"
+repository = "https://github.com/eth219/gobot"
+readme = "README.md"
+keywords = ["go", "baduk", "weiqi", "mcts", "gtp"]
+categories = ["games", "command-line-utilities"]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

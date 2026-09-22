@@ -1,0 +1,5 @@
+/target
+# KataGo writes its GTP logs into whatever directory it was started from.
+/gtp_logs
+*.sgf
+.DS_Store
